@@ -2,12 +2,18 @@ from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import StreamingResponse
 from kittentts import KittenTTS
 import io
+import os
 import soundfile as sf
 from typing import Optional
+from dotenv import load_dotenv
+import argparse
+import uvicorn
 
 # -------- Config --------
-API_KEY = "changeme"  # set a strong key in prod
-SAMPLE_RATE = 25000   # match your working prototype
+load_dotenv()
+
+API_KEY = os.getenv("API_KEY")
+SAMPLE_RATE = 25000
 AVAILABLE_VOICES = [
     "expr-voice-2-m","expr-voice-2-f",
     "expr-voice-3-m","expr-voice-3-f",
@@ -18,12 +24,11 @@ AVAILABLE_VOICES = [
 # -------- FastAPI --------
 app = FastAPI(title="KittenTTS OpenAI Spec API")
 
-# Initialize KittenTTS model (newer model you tested)
 tts_model = KittenTTS("KittenML/kitten-tts-nano-0.2")
 
 # -------- Helpers --------
 def check_auth(authorization: Optional[str]):
-    if API_KEY == "":
+    if not API_KEY:
         return True
     if not authorization:
         return False
@@ -36,11 +41,13 @@ def check_auth(authorization: Optional[str]):
 @app.get("/health")
 def health():
     return {"ok": True, "model": "KittenTTS", "sample_rate": SAMPLE_RATE}
+    
+@app.get("/v1/audio/models")
+def models():
+    return {"data": [{"id": "default"}]}
 
-@app.get("/v1/voices")
-def voices(authorization: Optional[str] = Header(None)):
-    if not check_auth(authorization):
-        raise HTTPException(status_code=401, detail="Unauthorized")
+@app.get("/v1/audio/voices")
+def voices():
     return {"voices": AVAILABLE_VOICES}
 
 @app.post("/v1/audio/speech")
@@ -71,4 +78,12 @@ async def synthesize(request: Request, authorization: Optional[str] = Header(Non
     sf.write(buf, audio, SAMPLE_RATE, format="WAV")
     buf.seek(0)
     return StreamingResponse(buf, media_type="audio/wav")
+
+# -------- Auto-Start Uvicorn --------
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run FastAPI TTS server")
+    parser.add_argument("--port", type=int, default=8081, help="Port to run FastAPI on")
+    args = parser.parse_args()
+
+    uvicorn.run("app:app", host="0.0.0.0", port=args.port, reload=True)
 
